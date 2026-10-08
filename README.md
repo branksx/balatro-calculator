@@ -17,7 +17,7 @@ balatro-calculator/
 │       ├── schemas.py              # Schemas de validação e serialização Pydantic
 │       └── routers/
 │           ├── __init__.py
-│           ├── calculations.py     # Endpoint e motor de cálculo matemático das mãos
+│           ├── calculations.py     # Motor de cálculo matemático das mãos e Jokers
 │           ├── hands.py            # Endpoints para consulta de mãos de poker
 │           └── jokers.py           # Endpoints para consulta de Jokers e seus efeitos
 ├── frontend/
@@ -34,7 +34,7 @@ balatro-calculator/
 
 ## 🏗️ 2. Arquitetura e Visão Geral
 
-O projeto segue o padrão **Client-Server RESTful**, separando claramente a camada visual (Frontend Web) da regra de negócio e persistência (Backend FastAPI + SQL Server).
+O projeto segue o padrão **Client-Server RESTful**, separando a interface web interativa do motor de cálculo e da persistência de dados:
 
 ```mermaid
 graph LR
@@ -53,29 +53,31 @@ graph LR
     end
 
     UI -->|GET /hands/| RouterHands
-    UI -->|POST /calculate/| RouterCalc
+    UI -->|POST /calculate/ (com Jokers)| RouterCalc
     RouterHands -->|SQLAlchemy ORM| SQL
     RouterCalc -->|Busca base_chip & base_multi| SQL
+    RouterCalc -->|Busca efeitos dos Jokers| SQL
     RouterJokers -->|Consulta Jokers & Efeitos| SQL
 ```
 
 ### Principais Componentes:
-1. **Frontend (Vanilla HTML/CSS/JS)**:
+1. **Frontend (Vanilla HTML5 / CSS3 / ES6+)**:
    - Carrega dinamicamente a lista de mãos disponíveis no banco via API.
    - Permite ao usuário escolher a mão jogada e o nível atual.
-   - Envia uma requisição assíncrona para o backend e exibeChips, Multiplicador e Pontuação Total.
+   - Envia requisições assíncronas para o backend e exibe Chips, Multiplicador e Pontuação Total.
 2. **Backend (FastAPI + SQLAlchemy)**:
    - Fornece documentação automática via Swagger (`/docs`) e ReDoc (`/redoc`).
-   - Implementa CORS para comunicação fluida entre origem web e API local.
-   - Realiza validação estrita de dados com Schemas Pydantic.
+   - Implementa CORS para comunicação fluida entre o frontend e a API.
+   - Validação estrita de dados com Schemas Pydantic.
+   - Motor de cálculo que processa a progressão da mão e aplica os bônus dos Jokers da mesa.
 3. **Persistência (SQL Server Express)**:
-   - Base de dados centralizada `BALATRO` com catálogo de mãos, jokers e modificadores.
+   - Base de dados centralizada `BALATRO` com tabelas de mãos de poker, Jokers e seus efeitos/modificadores.
 
 ---
 
 ## 🗄️ 3. Modelagem de Dados (SQL Server Express)
 
-A camada de persistência utiliza tabelas no banco de dados **SQL Server Express** conectadas via `pyodbc` e `ODBC Driver 17 for SQL Server`.
+A camada relacional está mapeada no SQLAlchemy através do arquivo `backend/app/models.py`:
 
 ```mermaid
 erDiagram
@@ -111,13 +113,12 @@ erDiagram
 ### Detalhamento das Tabelas
 
 #### `TB_POKER_HANDS` (Mãos de Poker)
-Armazena a definição base de cada mão e como ela progride por nível:
 - `ID` (PK): Identificador numérico da mão.
 - `HAND_NAME`: Nome da mão (ex: *High Card*, *Pair*, *Flush*, *Full House*).
 - `HAND_BASE_LEVEL`: Nível inicial padrão (normalmente 1).
 - `HAND_BASE_CHIP`: Fichas (Chips) concedidas no nível base.
 - `HAND_BASE_MULTI`: Multiplicador concedido no nível base.
-- `HAND_up_CHIP`: Incremento de fichas por cada nível adicional.
+- `HAND_UP_CHIP`: Incremento de fichas por cada nível adicional.
 - `HAND_UP_MULTI`: Incremento de multiplicador por cada nível adicional.
 
 #### `TB_JOKERS` (Catálogo de Jokers)
@@ -129,35 +130,37 @@ Armazena a definição base de cada mão e como ela progride por nível:
 #### `TB_JOKER_EFFECTS` (Regras e Efeitos de Jokers)
 - `ID` (PK): Identificador do efeito.
 - `JOKER_ID` (FK): Chave estrangeira referenciando `TB_JOKERS.ID`.
-- `EFFECT_TYPE`: Tipo de modificação aplicada (`+mult`, `xmult`, `+chips`, etc.).
-- `EFFECT_VALUE`: Valor numérico ou percentual do efeito.
-- `CONDITION_TYPE`: Condição de ativação (ex: naipe específico, mão jogada, contagem de descarte).
+- `EFFECT_TYPE`: Tipo de modificação aplicada (`ADD_CHIP`, `ADD_MULTI`, `X_MULTI`).
+- `EFFECT_VALUE`: Valor numérico da modificação (armazenado como texto e convertido dinamicamente).
+- `CONDITION_TYPE`: Condição de ativação (ex: `NONE`, naipes específicos, descarte).
 - `IS_PRE_CALC`: Momento do cálculo (`1` para antes do cálculo base, `0` para pós-cálculo).
 
 ---
 
 ## 🧮 4. Motor de Cálculo Matemático
 
-No *Balatro*, a pontuação de qualquer mão é dada pelo produto direto entre a soma total de **Chips (Fichas)** e o **Multiplicador (Mult)**:
+No *Balatro*, a pontuação de qualquer mão é dada pelo produto direto entre **Chips (Fichas)** e o **Multiplicador (Mult)**:
 
 $$\text{Pontuação Final} = \text{Chips} \times \text{Mult}$$
 
-### Regra de Escalonamento por Nível:
-Quando o jogador sobe o nível de uma mão (ex: através de cartas de Planeta), os valores de Chips e Mult aumentam linearmente com base no diferencial de níveis:
+### 1. Progressão por Nível da Mão:
+Quando uma mão é aprimorada, seus Chips e Mult aumentam linearmente com base no diferencial de níveis:
 
 $$\Delta L = \text{Nível Atual} - \text{Nível Base}$$
 
-$$\text{Chips Calculados} = \text{Base Chips} + (\Delta L \times \text{Up Chips})$$
+$$\text{Chips}_{\text{mão}} = \text{Base Chips} + (\Delta L \times \text{Up Chips})$$
 
-$$\text{Mult Calculado} = \text{Base Mult} + (\Delta L \times \text{Up Mult})$$
+$$\text{Mult}_{\text{mão}} = \text{Base Mult} + (\Delta L \times \text{Up Mult})$$
 
-### Exemplo Prático:
-- **Mão:** Flush (Nível Base = 1, Base Chips = 35, Base Mult = 4, Up Chips = 15, Up Mult = 2)
-- **Nível Escolhido:** 3
-- $\Delta L = 3 - 1 = 2$
-- $\text{Chips} = 35 + (2 \times 15) = 65$
-- $\text{Mult} = 4 + (2 \times 2) = 8$
-- $\text{Pontuação Final} = 65 \times 8 = 520$
+### 2. Modificadores dos Jokers:
+Com os Jokers ativos enviados na requisição, o motor de cálculo itera sobre cada Joker e seus efeitos cadastrados:
+- **Efeitos de Fichas (`ADD_CHIP`):** Somam diretamente ao acumulador de fichas.
+- **Multiplicadores Aditivos (`ADD_MULTI`):** Somam diretamente ao multiplicador acumulado.
+- **Multiplicadores Exponenciais (`X_MULTI`):** Multiplicam o valor total de multiplicador acumulado até aquele ponto.
+
+$$\text{Chips Final} = \text{Chips}_{\text{mão}} + \sum \text{Chips}_{\text{jokers}}$$
+
+$$\text{Mult Final} = (\text{Mult}_{\text{mão}} + \sum \text{Mult}_{\text{aditivos}}) \times \prod \text{Fatores}_{\text{xmult}}$$
 
 ---
 
@@ -172,29 +175,32 @@ $$\text{Mult Calculado} = \text{Base Mult} + (\Delta L \times \text{Up Mult})$$
 | `GET` | `/jokers/` | Lista todos os Jokers disponíveis | `200 OK` |
 | `GET` | `/jokers/{joker_id}` | Consulta detalhes de um Joker por ID | `200 OK` |
 | `GET` | `/jokers/{joker_id}/effects`| Consulta os efeitos vinculados a um Joker | `200 OK` |
-| `POST`| `/calculate/` | Calcula Chips, Mult e Pontuação para mão e nível dados | `200 OK` |
+| `POST`| `/calculate/` | Calcula Chips, Mult e Pontuação para mão, nível e Jokers dados | `200 OK` |
 
 ### Exemplo de Payload para `/calculate/`:
 
 **Requisição (`POST /calculate/`):**
 ```json
 {
-  "hand_id": 1,
-  "level": 3
+  "hand_id": 2,
+  "level": 1,
+  "joker_ids": [1]
 }
 ```
 
 **Resposta:**
 ```json
 {
-  "hand_id": 1,
-  "hand_name": "Pair",
-  "level": 3,
-  "calculated_chips": 30,
-  "calculated_multi": 4,
-  "score": 120
+  "hand_id": 2,
+  "hand_name": "PAIR",
+  "level": 1,
+  "calculated_chips": 10,
+  "calculated_multi": 6,
+  "joker_ids": [1],
+  "score": 60
 }
 ```
+*(Neste exemplo: Pair Nível 1 possui Base 10 Chips x 2 Mult. O Joker ID 1 com `ADD_MULTI = 4` elevou o multiplicador para 6, resultando em $10 \times 6 = 60$).*
 
 ---
 
@@ -206,23 +212,19 @@ A interface foi concebida com foco em simplicidade e usabilidade, aplicando esti
 - **Cálculo de Pontuação (`calculateScore`)**: Ao clicar em "Calcular Pontuação", os valores de ID e nível são validados e enviados em JSON para o endpoint `POST /calculate/`.
 - **Renderização Reativa**: O cartão de resultados (`#resultCard`) tem a classe `.hidden` removida e exibe os Chips, Multiplicador e a pontuação formatada com separadores numéricos.
 
-> [!TIP]
-> Certifique-se de que o `<head>` do arquivo `frontend/index.html` contém a tag `<link rel="stylesheet" href="css/style.css">` para que os estilos do tema sejam renderizados corretamente.
-
 ---
 
 ## 🛠️ 7. Guia de Instalação e Execução
 
 ### Pré-requisitos
 - **Python 3.10+**
-- **Microsoft SQL Server / SQL Server Express**
+- **Microsoft SQL Server / SQL Server Express** com o banco `BALATRO`
 - **ODBC Driver 17 for SQL Server** instalado no Windows
 
 ### Passo a Passo
 
 1. **Ativar o Ambiente Virtual:**
    ```powershell
-   # No diretório raiz do projeto
    .\.venv\Scripts\Activate.ps1
    ```
 
@@ -252,7 +254,8 @@ A interface foi concebida com foco em simplicidade e usabilidade, aplicando esti
 
 ## 🔮 8. Roadmap e Próximas Versões (Versão 0.3+)
 
-- [ ] **Integração dos Jokers no Cálculo**: Suportar a seleção de até 5 Jokers ativos e aplicar multiplicadores aditivos (`+mult`) e exponenciais (`Xmult`) na ordem em que estão posicionados.
+- [x] **Integração dos Jokers no Motor de Cálculo**: Suporte ao recebimento de lista de Jokers, consulta de efeitos no banco (`TB_JOKER_EFFECTS`) e aplicação de bônus aditivos (`ADD_MULTI`, `ADD_CHIP`) e multiplicativos (`X_MULTI`).
+- [ ] **Integração dos Jokers no Frontend**: Interface com slots interativos para equipar/desequipar Jokers e enviar seus IDs para o cálculo.
 - [ ] **Seleção de Cartas Jogadas**: Adicionar pontuação das cartas individuais da mão (2 ao Ás) somando-se aos Chips base.
 - [ ] **Modificadores de Cartas**: Suporte a edições especiais (Foil: `+50 Chips`, Holographic: `+10 Mult`, Polychrome: `X1.5 Mult`).
 - [ ] **Cartas de Tarô e Planetas**: Simular abertura de pacotes e uso de consumíveis para subir níveis em tempo real.
