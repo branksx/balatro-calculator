@@ -1,8 +1,9 @@
 from pydantic import BaseModel, Field
 
-class   HandCalculateRequest(BaseModel):
+class HandCalculateRequest(BaseModel):
     hand_id: int = Field(..., description="The ID of the poker hand to calculate.")
     level: int = Field(..., description="The level of the poker hand.")
+    joker_ids: list[int] = Field(default=[], description="Lista de IDs dos Jokers selecionados.")
 
 class HandCalculateResponse(BaseModel):
     hand_id: int
@@ -10,6 +11,7 @@ class HandCalculateResponse(BaseModel):
     level: int
     calculated_chips: int
     calculated_multi: int
+    joker_ids: list[int] = []
     score: int
     
     class Config:

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import SessionLocal
-from ..models import PokerHand
+from ..models import PokerHand, JokerEffects
 from ..schemas import HandCalculateRequest, HandCalculateResponse
 
 router = APIRouter(prefix="/calculate", tags=["Calculation Engine"])
@@ -25,17 +25,33 @@ def calculate_hand_score(payload: HandCalculateRequest, db: Session = Depends(ge
     # Multi = base_multi + ((level - base_level) * up_multi)
     level_diff = payload.level - hand.hand_base_level
     
-    calc_chips = hand.hand_base_chip + (level_diff * hand.hand_up_chip)
-    calc_multi = hand.hand_base_multi + (level_diff * hand.hand_up_multi)
+    chips_atual = hand.hand_base_chip + (level_diff * hand.hand_up_chip)
+    multi_atual = hand.hand_base_multi + (level_diff * hand.hand_up_multi)
     
-    # Pontuação final básica em Balatro = Chips * Mult
-    score = calc_chips * calc_multi
+    for j_id in payload.joker_ids:
+        # Buscamos no banco os efeitos pertencentes a este Joker:
+        effects = db.query(JokerEffects).filter(JokerEffects.joker_id == j_id).all()
+        
+        # Percorremos cada efeito encontrado para aplicar:
+        for effect in effects:
+            valor = float(effect.effect_value)
+            tipo = effect.effect_type.strip().upper()
+            
+            if tipo in ("ADD_CHIP", "ADD_CHIPS", "+CHIP", "+CHIPS"):
+                chips_atual += int(valor)
+            elif tipo in ("ADD_MULTI", "ADD_MULT", "+MULTI", "+MULT"):
+                multi_atual += int(valor)
+            elif tipo in ("X_MULTI", "X_MULT", "XMULTI", "XMULT", "*MULTI"):
+                multi_atual *= valor
+            # Pontuação final básica em Balatro = Chips * Mult
+            score = int(chips_atual * multi_atual)
 
     return {
         "hand_id": hand.id,
         "hand_name": hand.hand_name,
         "level": payload.level,
-        "calculated_chips": calc_chips,
-        "calculated_multi": calc_multi,
+        "calculated_chips": chips_atual,
+        "calculated_multi": multi_atual,
+        "joker_ids": payload.joker_ids,
         "score": score
     }

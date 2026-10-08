@@ -29,8 +29,15 @@ app.include_router(jokers.router)
 def read_root():
     return {"message": "Bem-vindo à API de cálculo de pontuações de mão de balatro!"}
 
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 @app.get("/test-db")
-def test_db(db: Session = Depends(get_db :=SessionLocal)):
+def test_db(db: Session = Depends(get_db)):
     try:
         #Testa a ligação contando quantas mãos existem  na tabela que validamos
         total_hands = db.execute(text("SELECT COUNT(*) FROM TB_POKER_HANDS")).scalar()
