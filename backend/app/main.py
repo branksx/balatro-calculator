@@ -2,9 +2,8 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from backend.app.routers import hands
 from .database import SessionLocal
-from .routers import calculations, hands
+from .routers import calculations, hands, jokers
 
 app = FastAPI(
     title="Balatro Hand Calculator API",
@@ -24,6 +23,7 @@ app.add_middleware(
 #Registrar o router de cálculos
 app.include_router(calculations.router)
 app.include_router(hands.router)
+app.include_router(jokers.router)
 
 @app.get("/")
 def read_root():

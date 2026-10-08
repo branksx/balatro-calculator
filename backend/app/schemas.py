@@ -26,3 +26,23 @@ class PokerHandResponse(BaseModel):
 
     class Config:
         from_attributes = True  # Permite que o Pydantic leia diretamente dos modelos SQLAlchemy.
+        
+class JokerResponse(BaseModel):
+    id: int
+    joker_name: str
+    joker_rarity: str
+    joker_description: str
+
+    class Config:
+        from_attributes = True  # Permite que o Pydantic leia diretamente dos modelos SQLAlchemy.
+        
+class JokerEffectResponse(BaseModel):
+    id: int
+    joker_id: int
+    effect_type: str
+    effect_value: str
+    condition_type: str
+    is_pre_calc: int  # 0 = False, 1 = True
+
+    class Config:
+        from_attributes = True  # Permite que o Pydantic leia diretamente dos modelos SQLAlchemy.
