@@ -3,6 +3,7 @@ const API_URL = "http://127.0.0.1:8000";
 //Elementos da DOM
 const handSelect = document.getElementById("handSelect");
 const levelInput = document.getElementById("levelInput");
+const jokerSelect = document.getElementById("jokerSelect");
 const calculateButton = document.getElementById("calculateButton");
 const resultCard = document.getElementById("resultCard");
 
@@ -11,6 +12,7 @@ const resHandLevel = document.getElementById("resHandLevel");
 const resChips = document.getElementById("resChips");
 const resMulti = document.getElementById("resMulti");
 const resScore = document.getElementById("resScore");
+
 
 async function loadHands() {
     try {
@@ -30,9 +32,29 @@ async function loadHands() {
     }
 }
 
+async function loadJokers() {
+    try {
+        const response = await fetch(`${API_URL}/jokers/`);
+        const jokers = await response.json();
+
+        jokerSelect.innerHTML = "";
+        jokers.forEach(joker => {
+            const option = document.createElement("option");
+            option.value = joker.id;
+            option.textContent = joker.joker_name;
+            jokerSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error("Erro ao carregar jokers:", error);
+        jokerSelect.innerHTML = "<option value=''>Erro ao conectar à API</option>";
+    }
+}
+
 async function calculateScore() {
     const handId = parseInt(handSelect.value);
     const level = parseInt(levelInput.value);
+    const jokerId = parseInt(jokerSelect.value);
+    const jokerList = jokerId ? [jokerId] : [];
 
     if (!handId || !level || level < 1) {
         alert("Por favor, selecione uma mão válida e insira um nível válido (maior ou igual a 1).");
@@ -46,7 +68,8 @@ async function calculateScore() {
             },
             body: JSON.stringify({
                 hand_id: handId,
-                level: level
+                level: level,
+                joker_ids: jokerList
             })
         });
 
@@ -74,4 +97,5 @@ async function calculateScore() {
 
 //Eventos
 document.addEventListener("DOMContentLoaded", loadHands);
+document.addEventListener("DOMContentLoaded", loadJokers);
 calculateButton.addEventListener("click", calculateScore);

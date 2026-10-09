@@ -16,7 +16,7 @@ class Jokers(Base):
     __tablename__ = "TB_JOKERS"
     id = Column("ID", Integer, primary_key=True, index=True)
     joker_name = Column("JOKER_NAME", String(50), nullable=False)
-    joker_rarity = Column("JOKER_RARITY", String(25), nullable=False)
+    joker_rarity = Column("RARITY", String(25), nullable=False)
     joker_description = Column("JOKER_DESCRIPTION", String(125), nullable=False)
 
 class JokerEffects(Base):

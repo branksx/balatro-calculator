@@ -44,7 +44,7 @@ def calculate_hand_score(payload: HandCalculateRequest, db: Session = Depends(ge
             elif tipo in ("X_MULTI", "X_MULT", "XMULTI", "XMULT", "*MULTI"):
                 multi_atual *= valor
             # Pontuação final básica em Balatro = Chips * Mult
-            score = int(chips_atual * multi_atual)
+    score = int(chips_atual * multi_atual)
 
     return {
         "hand_id": hand.id,
